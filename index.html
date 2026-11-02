@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Texto a Voz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --fondo: #0b0b0b;
+    --panel: #151515;
+    --borde: #2a2a2a;
+    --texto: #f1f1f1;
+    --tenue: #9a9a9a;
+    --verde: #22c55e;
+    --verde-osc: #16a34a;
+    --verde-txt: #04210f;
+    --error: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: var(--fondo); color: var(--texto);
+    font-family: "Patrick Hand", "Caveat", cursive;
+    font-size: 21px;
+    display: flex; justify-content: center;
+    padding: 32px 16px;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 {
+    font-family: "Caveat", cursive; font-weight: 700;
+    font-size: 64px; margin: 0 0 4px; line-height: 1;
+  }
+  h1 span { color: var(--verde); }
+  .sub { color: var(--tenue); margin: 0 0 28px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--borde);
+    border-radius: 16px; padding: 22px;
+  }
+  label { display: block; margin-bottom: 6px; }
+  textarea {
+    width: 100%; min-height: 220px; resize: vertical;
+    background: #0e0e0e; color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 12px;
+    padding: 14px; font: inherit; line-height: 1.4;
+  }
+  textarea:focus, select:focus { outline: 2px solid var(--verde); outline-offset: 1px; }
+  .contador { text-align: right; color: var(--tenue); font-size: 17px; margin-top: 4px; }
+  .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+  @media (max-width: 560px) { .fila { grid-template-columns: 1fr; } h1 { font-size: 50px; } }
+  select {
+    width: 100%; background: #0e0e0e; color: var(--texto);
+    border: 1px solid var(--borde); border-radius: 10px;
+    padding: 10px; font: inherit;
+  }
+  input[type=range] { width: 100%; accent-color: var(--verde); }
+  .botones { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+  button {
+    font: inherit; font-size: 24px; cursor: pointer;
+    background: var(--verde); color: var(--verde-txt);
+    border: none; border-radius: 12px; padding: 10px 26px;
+    transition: background .15s, transform .1s;
+  }
+  button:hover:not(:disabled) { background: var(--verde-osc); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .resultado { margin-top: 22px; display: none; }
+  .resultado.visible { display: block; }
+  audio { width: 100%; margin-bottom: 14px; filter: invert(1) hue-rotate(180deg); }
+  .estado { margin-top: 14px; min-height: 1.4em; color: var(--tenue); }
+  .estado.error { color: var(--error); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Texto a <span>Voz</span></h1>
+  <p class="sub">Escribe algo, elige una voz y descárgalo.</p>
+
+  <div class="panel">
+    <label for="texto">Tu texto</label>
+    <textarea id="texto" maxlength="20000" placeholder="Hola, soy tu nueva voz…"></textarea>
+    <div class="contador"><span id="cuenta">0</span> / 20000</div>
+
+    <div class="fila">
+      <div>
+        <label for="voz">Voz</label>
+        <select id="voz"></select>
+      </div>
+      <div>
+        <label for="volumen">Volumen: <span id="volTxt">100%</span></label>
+        <input id="volumen" type="range" min="-50" max="50" step="5" value="0">
+      </div>
+    </div>
+
+    <div class="botones">
+      <button id="generar">Generar audio</button>
+    </div>
+
+    <div class="resultado" id="resultado">
+      <audio id="reproductor" controls></audio>
+      <div class="fila" style="margin-top:0">
+        <div>
+          <label for="formato">Formato</label>
+          <select id="formato">
+            <option value="mp4" selected>MP4</option>
+            <option value="mp3">MP3</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button id="descargar" style="width:100%">Descargar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="estado" id="estado"></div>
+  </div>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let audioId = null;
+
+  try { $("texto").value = localStorage.getItem("tav-texto") || ""; } catch {}
+  $("cuenta").textContent = $("texto").value.length;
+  $("texto").addEventListener("input", () => {
+    $("cuenta").textContent = $("texto").value.length;
+    try { localStorage.setItem("tav-texto", $("texto").value); } catch {}
+  });
+  $("volumen").addEventListener("input", () => {
+    $("volTxt").textContent = (100 + Number($("volumen").value)) + "%";
+  });
+
+  fetch("/voces").then(r => r.json()).then(voces => {
+    for (const v of voces) $("voz").add(new Option(v.nombre, v.id));
+  });
+
+  function estado(msg, error = false) {
+    $("estado").textContent = msg;
+    $("estado").classList.toggle("error", error);
+  }
+
+  $("generar").addEventListener("click", async () => {
+    $("generar").disabled = true;
+    estado("Generando voz…");
+    try {
+      const r = await fetch("/generar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          texto: $("texto").value,
+          voz: $("voz").value,
+          volumen: Number($("volumen").value),
+        }),
+      });
+      const datos = await r.json();
+      if (!r.ok) throw new Error(datos.error || "Error desconocido");
+      audioId = datos.id;
+      $("reproductor").src = "/audio/" + audioId;
+      $("resultado").classList.add("visible");
+      $("reproductor").play().catch(() => {});
+      estado("¡Listo! Escúchalo y descárgalo cuando quieras.");
+    } catch (e) {
+      estado(e.message, true);
+    } finally {
+      $("generar").disabled = false;
+    }
+  });
+
+  $("descargar").addEventListener("click", () => {
+    if (!audioId) return;
+    estado("Preparando descarga…");
+    window.location.href = `/descargar/${audioId}?formato=${$("formato").value}`;
+    setTimeout(() => estado(""), 2500);
+  });
+</script>
+</body>
+</html>
